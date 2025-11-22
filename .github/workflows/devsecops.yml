@@ -1,0 +1,73 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-test-secure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # Build and Test Chaincode
+      - name: Install Chaincode Dependencies
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm ci
+
+      - name: Lint Check
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm run lint
+
+      - name: Security Scan - npm audit
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm audit --audit-level=high || true
+
+      - name: Build Chaincode
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm run build
+
+      # Docker Image Build and Security Scan
+      - name: Build Docker Image
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: docker build -t sensor-chaincode:latest .
+
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "sensor-chaincode:latest"
+          format: "table"
+          exit-code: "0"
+          severity: "CRITICAL,HIGH"
+
+      # Install Caliper Dependencies (optional - for benchmarking)
+      - name: Install Caliper Dependencies
+        working-directory: ./caliper-workspace
+        run: npm ci
+
+  deploy:
+    needs: build-test-secure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy to Test Network
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: 178.16.139.239
+          username: root
+          key: I9finity@lg@new
+          script: |
+            cd ~/fabric-samples/test-network
+            ./network.sh down
+            ./network.sh up createChannel -ca
+            ./network.sh deployCC -ccn SensorContract -ccp ../asset-transfer-basic/chaincode-typescript -ccl typescript
