@@ -67,7 +67,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
           script: |
-            cd ~/fabric-samples/test-network
+            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples/test-network
             ./network.sh down
-            ./network.sh up createChannel -ca
+            ./network.sh up createChannel
             ./network.sh deployCC -ccn SensorContract -ccp ../asset-transfer-basic/chaincode-typescript -ccl typescript
