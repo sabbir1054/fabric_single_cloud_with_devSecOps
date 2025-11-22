@@ -63,9 +63,9 @@ jobs:
       - name: Deploy to Test Network
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: 178.16.139.239
-          username: root
-          key: I9finity@lg@new
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_PRIVATE_KEY }}
           script: |
             cd ~/fabric-samples/test-network
             ./network.sh down
