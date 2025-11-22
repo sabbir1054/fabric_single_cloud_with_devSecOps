@@ -67,10 +67,27 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
           script: |
-            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples/test-network
+            # Load nvm and set PATH for npm
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            # Navigate to fabric-samples and install Fabric binaries
+            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples
             curl -sSLO https://raw.githubusercontent.com/hyperledger/fabric/main/scripts/install-fabric.sh && chmod +x install-fabric.sh
-            ./install-fabric.sh docker samples binary
-            cd ~/fabric-samples/test-network
+            ./install-fabric.sh docker binary
+
+            # Set Fabric bin and config paths
+            export PATH=$PATH:$HOME/fabric_single_cloud_with_devSecOps/fabric-samples/bin
+            export FABRIC_CFG_PATH=$HOME/fabric_single_cloud_with_devSecOps/fabric-samples/config
+
+            # Navigate to test-network
+            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples/test-network
+
+            # Stop existing network
             ./network.sh down
-            ./network.sh up createChannel
+
+            # Start network and create channel
+            ./network.sh up createChannel -ca
+
+            # Deploy chaincode
             ./network.sh deployCC -ccn SensorContract -ccp ../asset-transfer-basic/chaincode-typescript -ccl typescript
