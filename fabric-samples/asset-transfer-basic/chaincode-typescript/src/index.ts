@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { SensorContract } from './SensorRankingChaincode';
 /*
  * SPDX-License-Identifier: Apache-2.0
