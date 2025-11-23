@@ -87,7 +87,7 @@ jobs:
             ./network.sh down
 
             # Start network and create channel
-            ./network.sh up createChannel -ca
+            ./network.sh up createChannel 
 
             # Deploy chaincode
             ./network.sh deployCC -ccn SensorContract -ccp ../asset-transfer-basic/chaincode-typescript -ccl typescript
