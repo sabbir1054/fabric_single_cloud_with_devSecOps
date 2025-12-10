@@ -1,0 +1,126 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# ---------------------------
+# 1) SAST Added (CodeQL)
+# ---------------------------
+jobs:
+  codeql-sast:
+    name: SAST Security Scan (CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+
+      - name: Install Dependencies for Build
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm ci
+
+      - name: Build Chaincode for CodeQL Analysis
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm run build
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+# ---------------------------
+# 2) CI Pipeline (Build + Test + Security)
+# ---------------------------
+  build-test-secure:
+    needs: codeql-sast
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # Chaincode dependency installation
+      - name: Install Chaincode Dependencies
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm ci
+
+      # Linting
+      - name: Lint Check
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm run lint
+
+      # SCA (Dependency Scan)
+      - name: Security Scan - npm audit
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm audit --audit-level=high || true
+
+      # Build Chaincode
+      - name: Build Chaincode
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: npm run build
+
+      # Docker Image Build
+      - name: Build Docker Image
+        working-directory: ./fabric-samples/asset-transfer-basic/chaincode-typescript
+        run: docker build -t sensor-chaincode:latest .
+
+      # Container Image Scan with Trivy
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "sensor-chaincode:latest"
+          format: "table"
+          exit-code: "0"
+          severity: "CRITICAL,HIGH"
+
+      # Caliper (Optional)
+      - name: Install Caliper Dependencies
+        working-directory: ./caliper-workspace
+        run: npm ci
+
+# ---------------------------
+# 3) Secure Deployment
+# ---------------------------
+  deploy:
+    needs: build-test-secure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy to Test Network
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples
+            curl -sSLO https://raw.githubusercontent.com/hyperledger/fabric/main/scripts/install-fabric.sh && chmod +x install-fabric.sh
+            ./install-fabric.sh docker binary
+
+            export PATH=$PATH:$HOME/fabric_single_cloud_with_devSecOps/fabric-samples/bin
+            export FABRIC_CFG_PATH=$HOME/fabric_single_cloud_with_devSecOps/fabric-samples/config
+
+            cd ~/fabric_single_cloud_with_devSecOps/fabric-samples/test-network
+
+            ./network.sh down
+            ./network.sh up createChannel
+            ./network.sh deployCC -ccn SensorContract -ccp ../asset-transfer-basic/chaincode-typescript -ccl typescript
